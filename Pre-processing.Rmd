@@ -1,0 +1,539 @@
+---
+title: "RentAnalytics"
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-05-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exploratory Data Analysis of UCIs "Apartment for Rent Classified"
+
+## **1. Data Loading**
+
+```{r}
+# Set the working directory to the folder containing your data
+setwd("C:/code/Courses/DataAnalytics/Project/RentAnalytics")
+```
+```{r}
+df <- read.csv('apartment_data_final.csv')
+```
+
+## **2. Initial Data Exploration**
+
+```{r}
+data <- df
+```
+
+```{r}
+dim(data)
+```
+#### Data Summary
+
+```{r}
+str(data)
+```
+#### Calculating the percentage of NA values in each column and sorting them in descending
+
+```{r}
+sort(colMeans(is.na(data)), decreasing = TRUE)
+
+```
+### Identifying Variables with Missing Values
+
+```{r}
+vars_with_na <- names(data)[colSums(is.na(data)) > 0]
+```
+
+
+```{r}
+na_percentage <- colMeans(is.na(data[vars_with_na]))
+```
+
+```{r}
+na_percentage
+```
+#### Aggregating Data for Analysis
+
+This analysis helps understand regional price differences.
+
+```{r}
+library(dplyr)
+
+# Calculating the average price by region and sorting the results
+average_price_by_region <- data %>%
+  group_by(us_region) %>%
+  summarise(average_price = mean(price, na.rm = TRUE)) %>%
+  arrange(desc(average_price))
+
+# Printing the results
+print(average_price_by_region)
+```
+
+
+```{r}
+library(dplyr)
+
+# Average price by state
+state_avg_price <- df %>%
+  group_by(state) %>%
+  summarise(average_price = mean(price, na.rm = TRUE))
+print(state_avg_price)
+
+# Average price by presence of photos
+photo_avg_price <- df %>%
+  group_by(has_photo) %>%
+  summarise(average_price = mean(price, na.rm = TRUE))
+print(photo_avg_price)
+
+# Average price by region and division
+region_division_avg_price <- df %>%
+  group_by(us_region, us_division) %>%
+  summarise(average_price = mean(price, na.rm = TRUE))
+print(region_division_avg_price)
+
+# Average price for studios
+studio_avg_price <- df %>%
+  group_by(studio) %>%
+  summarise(average_price = mean(price, na.rm = TRUE))
+print(studio_avg_price)
+
+# Average price considering pet policy
+pet_avg_price <- df %>%
+  group_by(dogs_allowed, cats_allowed) %>%
+  summarise(average_price = mean(price, na.rm = TRUE))
+print(pet_avg_price)
+```
+
+- **Group by state and calculate average price**  
+This would allow you to see the average price of properties in each state.
+
+- **Group by whether the property has photos and calculate average price**
+This would help you understand if having photos affects the price.
+
+- **Group by US region and division and calculate average price**
+How price varies across different regions and divisions of the US.
+
+- **Group by two categories—dogs_allowed and cats_allowed and calculate average price**
+Helps to understand the impact of pet-friendliness on rental costs.
+
+
+#### Exploring Boolean and Numerical Variables
+
+
+```{r}
+bool_vars <- names(data)[sapply(data, function(x) length(unique(x)) == 2)]
+
+# Display the first few rows of these columns
+head(data[bool_vars])
+```
+
+```{r}
+# Identify numerical variables, excluding boolean ones
+num_vars <- names(data)[sapply(data, is.numeric) & !names(data) %in% bool_vars]
+
+print(paste('Number of numerical variables: ', length(num_vars)))
+head(data[num_vars])
+```
+
+#### Geospatial Visualization
+
+Map of the world and plots the geospatial data on it, visualizing the locations of the apartments on a global map. This helps understand the geographical distribution of the dataset's entries.
+
+```{r}
+library(sf)
+library(ggplot2)
+
+# Create an sf object (adjust as per your previous transformations)
+data_sf <- st_as_sf(data, coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
+
+# Read the world map (adjust the file path to your specific file)
+world <- st_read(system.file("shape/nc.shp", package="sf"))  # Update with your path
+
+# Plotting with adjustments
+ggplot() +
+  geom_sf(data = world, fill = "gray90") +  # Adjusting world map color
+  geom_sf(data = data_sf, aes(color = 'red'), shape = 19, size = 2, alpha = 0.5) +  # Smaller, transparent red points
+  theme_minimal() +
+  labs(title = "Geospatial Plot", x = "Longitude", y = "Latitude")
+
+```
+
+
+#### Identifying Discrete Variables
+
+- Identifies discrete numerical variables in the dataset, defined here as those numerical variables that have fewer than 20 unique values and are not 'id' or 'price'.
+
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Identify discrete variables from the set of numerical variables, excluding 'id' and 'price'
+discrete_vars <- num_vars[num_vars != "id" & num_vars != "price" & sapply(data[num_vars], function(x) length(unique(x)) < 20)]
+
+# Print the number of discrete variables
+print(paste('Number of discrete variables: ', length(discrete_vars)))
+
+# Display the first few rows of these discrete variables
+head(data[discrete_vars])
+```
+
+
+#### Visualizing Discrete Variables
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+analyse_discrete <- function(df, var) {
+  # Create a variable symbol from the string
+  var_sym <- rlang::sym(var)
+
+  # Creating a summary of median prices by the discrete variable
+  grs <- df %>%
+    group_by(!!var_sym) %>%
+    summarise(price_median = median(price, na.rm = TRUE)) %>%
+    ungroup()
+
+  # Plotting the results
+  p <- ggplot(grs, aes(x = !!var_sym, y = price_median)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    theme_minimal() +
+    labs(title = toupper(var), x = var, y = "Median Price") +
+    theme(plot.title = element_text(hjust = 0.5)) # Center the plot title
+  
+  print(p)
+}
+```
+
+- This function visualizes the relationship between each discrete variable and the 'price' using a bar plot, showing the median price for each category of the discrete variable.
+
+```{r}
+# Apply the function to each discrete variable
+for (var in discrete_vars) {
+  analyse_discrete(data, var)
+}
+
+```
+
+
+#### Identifying and Analyzing Continuous Variable Distributions
+
+- Identifies continuous variables, considered as those not already classified as discrete and excluding 'id'.
+
+```{r}
+cont_vars <- num_vars[!(num_vars %in% c(discrete_vars, "id"))]
+
+print(paste('Number of continuous variables: ', length(cont_vars)))
+head(data[cont_vars])
+```
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(moments)
+
+analyse_continuous <- function(df, var) {
+  # Ensure the variable is a symbol for tidy evaluation
+  var_sym <- rlang::sym(var)
+
+  # Remove NA values and prepare data
+  df <- df %>% 
+    filter(!is.na(!!var_sym))
+
+  # Create the distribution plot
+  p <- ggplot(df, aes(x = !!var_sym)) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "blue", alpha = 0.7) +
+    geom_density(color = "red", size = 1.5) +
+    labs(title = var, x = var, y = "Density") +
+    theme_minimal()
+
+  # Calculate skewness and kurtosis
+  skewness <- moments::skewness(df[[var]])
+  kurtosis <- moments::kurtosis(df[[var]])
+
+  # Add annotations for skewness and kurtosis
+  p <- p + annotate("text", x = Inf, y = Inf, label = sprintf("Skewness=%.2f Kurtosis=%.2f", skewness, kurtosis), 
+                    hjust = 1.1, vjust = 2, size = 5, color = "black")
+
+  # Print the plot
+  print(p)
+}
+```
+
+- This function visualizes the distribution of each continuous variable using histograms, including metrics like skewness and kurtosis for deeper insights into each distribution's shape.
+
+```{r}
+# Apply the function to each continuous variable
+for (var in cont_vars) {
+  analyse_continuous(data, var)
+}
+```
+
+#### Logarithmic Transformation on Continuous Variables
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(moments)  # For skewness and kurtosis
+
+analyse_transformed_continuous <- function(df, var) {
+  # Ensure the variable is a symbol for tidy evaluation
+  var_sym <- rlang::sym(var)
+  
+  # Remove NA values
+  df <- df %>%
+    filter(!is.na(!!var_sym))
+
+  # Skip transformation for 'latitude' or 'longitude'
+  if (var %in% c('latitude', 'longitude')) {
+    message(paste("Skipping transformation for", var))
+  } else {
+    # Apply logarithmic transformation with +1 to handle zero and negative values
+    df <- df %>%
+      mutate(!!var_sym := log1p(!!var_sym))
+  }
+
+  # Create the distribution plot
+  p <- ggplot(df, aes(x = !!var_sym)) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "blue", alpha = 0.7) +
+    geom_density(color = "red", size = 1.5) +
+    labs(title = var, x = paste("Transformed", var), y = "Density") +
+    theme_minimal()
+
+  # Calculate skewness and kurtosis
+  skewness_val <- skewness(df[[var]], na.rm = TRUE)
+  kurtosis_val <- kurtosis(df[[var]], na.rm = TRUE) - 3  # Adjust kurtosis to match Python's definition
+
+  # Add annotations for skewness and kurtosis
+  p <- p + annotate("text", x = Inf, y = Inf, label = sprintf("Skewness=%.2f Kurtosis=%.2f", skewness_val, kurtosis_val), 
+                    hjust = 1.1, vjust = 2, size = 5, color = "black")
+
+  # Print the plot
+  print(p)
+}
+```
+
+- Applies a logarithmic transformation to each continuous variable (except for geographical coordinates like latitude and longitude) and visualizes their new distributions to often normalize data and reduce skewness.
+
+```{r}
+# Apply the function to each continuous variable
+for (var in cont_vars) {
+  analyse_transformed_continuous(data, var)
+}
+```
+
+
+#### Visualizing Outliers in Continuous Variables
+```{r}
+# Removing rows where the 'price' column has NA values
+df <- na.omit(df, cols = "price")
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+find_outliers <- function(df, var) {
+  # Ensure the variable is a symbol for tidy evaluation
+  var_sym <- rlang::sym(var)
+  
+  # Skip transformation for 'latitude' or 'longitude'
+  if (var %in% c('latitude', 'longitude')) {
+    message(paste("Skipping", var))
+  } else {
+    # Apply logarithmic transformation to handle zero and negative values
+    df <- df %>%
+      mutate(!!var_sym := log1p(!!var_sym))
+  }
+  
+  # Plotting the boxplot
+  p <- ggplot(df, aes_string(x = "1", y = as.character(var_sym))) +
+    geom_boxplot() +
+    labs(title = var, y = paste("Transformed", var)) +
+    theme_minimal() +
+    theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())  # Hide x-axis details
+  
+  # Print the plot
+  print(p)
+}
+```
+
+```{r}
+# Apply the function to each continuous variable
+for (var in cont_vars) {
+  find_outliers(data, var)
+}
+```
+
+#### Outlier Detection
+
+
+```{r}
+library(ggplot2)
+
+# Create the scatter plot
+p <- ggplot(data, aes(x = square_feet, y = price)) +
+  geom_point() +  # Add points
+  labs(x = "square_feet", y = "price", title = "Price vs. Square Feet") +
+  theme_minimal() +  # Use a minimal theme
+  theme(axis.title.x = element_text(size = 13),  # Customize font size for x label
+        axis.title.y = element_text(size = 13))  # Customize font size for y label
+
+# Display the plot
+print(p)
+```
+
+
+```{r}
+library(dplyr)
+
+out_iqr <- function(df, column) {
+  # Calculate the IQR
+  q25 <- quantile(df[[column]], 0.25, na.rm = TRUE)
+  q75 <- quantile(df[[column]], 0.75, na.rm = TRUE)
+  iqr <- q75 - q25
+  
+  # Calculate the outlier cutoff
+  cut_off <- iqr * 1.5
+  lower <- q25 - cut_off
+  upper <- q75 + cut_off
+  
+  # Output the IQR and bounds
+  print(paste("The IQR is", iqr))
+  print(paste("The lower bound value is", lower))
+  print(paste("The upper bound value is", upper))
+  
+  # Calculate the number of outliers
+  num_outliers <- sum(df[[column]] < lower | df[[column]] > upper, na.rm = TRUE)
+  
+  return(print(paste("Total number of outliers are", num_outliers)))
+}
+```
+
+- Calculatethe IQR details for 'price'  
+
+```{r}
+
+out_iqr(df, 'price')
+```
+
+- Calculate the IQR details for 'bedrooms'  
+
+```{r}
+out_iqr(df, 'bedrooms')
+```
+
+- Calculate he IQR details for 'bathrooms'  
+
+```{r}
+out_iqr(df, 'bathrooms')
+```
+#### Categorical Variable Analysis
+
+Identifies categorical variables and then counts and sorts the unique values in each of these categorical variables to understand their diversity.
+
+```{r}
+library(dplyr)
+
+# Identifying categorical variables (assuming 'O' stands for object type in Python)
+cat_vars <- names(data)[sapply(data, function(x) is.character(x))]
+
+# Calculating the number of unique values for each categorical variable
+num_unique <- sapply(data[cat_vars], function(x) length(unique(x)))
+
+# Sorting the number of unique values in descending order
+sorted_unique <- sort(num_unique, decreasing = TRUE)
+
+# Display the sorted values
+sorted_unique
+```
+
+
+#### Rare Label Analysis
+
+- To identify and print categories within each categorical variable that appear in less than 1% of the observations
+
+```{r}
+library(dplyr)
+
+analyse_rare_labels <- function(df, var, threshold = 0.01) {
+  # Calculate the frequency of each category
+  freq <- df %>% 
+    group_by(!!rlang::sym(var)) %>%
+    summarise(Count = n(), .groups = 'drop') %>%
+    mutate(Frequency = Count / sum(Count))
+  
+  # Identify rare labels
+  rare_labels <- freq %>% 
+    filter(Frequency < threshold)
+  
+  # Print or return results
+  if (nrow(rare_labels) == 0) {
+    message(paste("No rare labels found in", var))
+  } else {
+    print(rare_labels)
+  }
+  
+  return(invisible(rare_labels))
+}
+
+```
+
+```{r}
+# Assuming cat_vars has been defined as shown previously
+for (var in cat_vars) {
+  print(analyse_rare_labels(data, var, 0.01))
+}
+```
+
+
+#### Geographic Filtering and Visualization
+
+Filters for entries that fall within specific geographic coordinates (likely encompassing the contiguous United States) and a price below $2000.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Filter data based on longitude, latitude, and price constraints
+df <- data %>%
+  filter(longitude > -130, longitude < -60, latitude > 25, latitude < 50, price < 2000)
+
+# Create a scatter plot of longitude vs. latitude
+ggplot(df, aes(x = longitude, y = latitude)) +
+  geom_point() +  # This adds the scatter plot points
+  labs(x = "Longitude", y = "Latitude", title = "Scatter Plot of Locations") +
+  theme_minimal()  # Uses a minimal theme for the plot
+```
+
+#### Correlation Analysis
+
+Calculates the correlation matrix for numerical columns in the dataset to identify relationships between different numerical variables.
+
+```{r}
+library(corrplot)
+library(reshape2)
+
+# Create a dataframe containing only numeric columns
+numeric_df <- data %>%
+  select(where(is.numeric))
+
+# Assuming numeric_df is your DataFrame with only numerical columns
+corr_matrix <- cor(numeric_df, use = "complete.obs")  # Computes correlation matrix, handling NA values
+
+# Melt the correlation matrix for ggplot2
+melted_corr_matrix <- melt(corr_matrix)
+
+# Plot the heatmap
+ggplot(melted_corr_matrix, aes(Var1, Var2, fill = value)) +
+  geom_tile() +  # Create tiles for heatmap
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", name="Correlation") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for better readability
+        axis.title = element_blank())  # Remove axis titles
+```
